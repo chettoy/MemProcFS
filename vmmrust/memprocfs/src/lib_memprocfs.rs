@@ -24,7 +24,9 @@
 //! 
 //! <b>Read and write memory</b> by using the methods
 //! [`mem_read()`](VmmProcess::mem_read()),
+//! [`mem_read_into()`](VmmProcess::mem_read_into()),
 //! [`mem_read_ex()`](VmmProcess::mem_read_ex()),
+//! [`mem_read_into_ex()`](VmmProcess::mem_read_into_ex()),
 //! [`mem_read_as()`](VmmProcess::mem_read_as()) and
 //! [`mem_write()`](VmmProcess::mem_write()) /
 //! [`mem_write_as()`](VmmProcess::mem_write_as()).
@@ -975,6 +977,37 @@ impl Vmm<'_> {
         return self.impl_mem_read(u32::MAX, pa, size, 0);
     }
 
+    /// Read a contigious physical memory chunk into a buffer.
+    /// 
+    /// The physical memory is read without any special flags. The whole chunk
+    /// must be read successfully for the method to succeed.
+    /// 
+    /// If deseriable to provide flags modifying the behavior (such as skipping
+    /// the built-in data cache or slower paging access) use the method
+    /// `mem_read_into_ex()` instead.
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `pa` - Physical address to start reading from.
+    /// * `out` - Buffer to be read into.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data starting at address 0x1000.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut buffer = [0u8, 0x100];
+    /// if vmm.mem_read_into(0x1000, &mut buffer).is_ok() {
+    ///     println!("{:?}", buffer.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into(&self, pa : u64, out: &mut [u8]) -> ResultEx<usize> {
+        return self.impl_mem_read_into(u32::MAX, pa, out, 0);
+    }
+
     /// Read a contigious physical memory chunk with flags.
     /// 
     /// Flags are constants named `FLAG_*`
@@ -1001,6 +1034,35 @@ impl Vmm<'_> {
     /// ```
     pub fn mem_read_ex(&self, pa : u64, size : usize, flags : u64) -> ResultEx<Vec<u8>> {
         return self.impl_mem_read(u32::MAX, pa, size, flags);
+    }
+
+    /// Read a contigious physical memory chunk with flags.
+    /// 
+    /// Flags are constants named `FLAG_*`
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `pa` - Physical address to start reading from.
+    /// * `out` - Buffer to be read into.
+    /// * `flags` - Any combination of `FLAG_*`.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data starting at address 0x1000.
+    /// // Force reading the underlying memory device (skip data cache) and
+    /// // Zero-Pad if parts of the memory read fail instead of failing.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut buffer = [0u8; 0x100];
+    /// if vmm.mem_read_into_ex(0x1000, &mut buffer, FLAG_NOCACHE | FLAG_ZEROPAD_ON_FAIL).is_ok() {
+    ///     println!("{:?}", buffer.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into_ex(&self, pa : u64, out : &mut [u8], flags : u64) -> ResultEx<usize> {
+        return self.impl_mem_read_into(u32::MAX, pa, out, flags);
     }
 
     /// Read a contigious physical memory chunk with flags as a type/struct.
@@ -1658,6 +1720,11 @@ impl VmmScatterMemory<'_> {
     /// Read memory prepared after the `execute()` call.
     pub fn read_as<T>(&self, va : u64) -> ResultEx<T> {
         return self.impl_read_as(va);
+    }
+
+    /// Read memory prepared after the `execute()` call.
+    pub fn read_into(&self, va : u64, buf : &mut [u8]) -> ResultEx<usize> {
+        return self.impl_read_into(va, buf);
     }
 
     /// Clear the scatter memory for additional read/writes.
@@ -2656,6 +2723,37 @@ impl VmmProcess<'_> {
         return self.vmm.impl_mem_read(self.pid, va, size, 0);
     }
 
+    /// Read a contigious virtual memory chunk into a buffer.
+    /// 
+    /// The virtual memory is read without any special flags. The whole chunk
+    /// must be read successfully for the method to succeed.
+    /// 
+    /// If deseriable to provide flags modifying the behavior (such as skipping
+    /// the built-in data cache or slower paging access) use the method
+    /// `mem_read_into_ex()` instead.
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `va` - Virtual address to start reading from.
+    /// * `out` - Buffer to be read into.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data from the base of kernel32.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut buffer = [0u8; 0x100];
+    /// if vmmprocess.mem_read_into(va_kernel32, &mut buffer).is_ok() {
+    ///     println!("{:?}", buffer.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into(&self, va : u64, out : &mut [u8]) -> ResultEx<usize> {
+        return self.vmm.impl_mem_read_into(self.pid, va, out, 0);
+    }
+
     /// Read a contigious virtual memory chunk with flags.
     /// 
     /// Flags are constants named `FLAG_*`
@@ -2683,6 +2781,36 @@ impl VmmProcess<'_> {
     /// ```
     pub fn mem_read_ex(&self, va : u64, size : usize, flags : u64) -> ResultEx<Vec<u8>> {
         return self.vmm.impl_mem_read(self.pid, va, size, flags);
+    }
+
+    /// Read a contigious virtual memory chunk with flags.
+    /// 
+    /// Flags are constants named `FLAG_*`
+    /// 
+    /// Reading many memory chunks individually may be slow, especially if
+    /// reading takes place using hardware FPGA devices. In that case it's
+    /// better to use the `mem_scatter()` functionality for better performance.
+    /// 
+    /// 
+    /// # Arguments
+    /// * `va` - Virtual address to start reading from.
+    /// * `size` - Number of bytes to read.
+    /// * `flags` - Any combination of `FLAG_*`.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Read 0x100 bytes of data from the base of kernel32.
+    /// // Force reading the underlying memory device (skip data cache) and
+    /// // Zero-Pad if parts of the memory read fail instead of failing.
+    /// // Example assumes: use pretty_hex::*;
+    /// let mut buffer = [0u8; 0x100];
+    /// let r = vmmprocess.mem_read_into_ex(va_kernel32, &mut buffer, FLAG_NOCACHE | FLAG_ZEROPAD_ON_FAIL);
+    /// if r.is_ok() {
+    ///     println!("{:?}", buffer.hex_dump());
+    /// }
+    /// ```
+    pub fn mem_read_into_ex(&self, va : u64, out : &mut [u8], flags : u64) -> ResultEx<usize> {
+        return self.vmm.impl_mem_read_into(self.pid, va, out, flags);
     }
 
     /// Read a contigious virtual memory chunk with flags as a type/struct.
@@ -5990,6 +6118,16 @@ impl Vmm<'_> {
         }
     }
 
+    fn impl_mem_read_into(&self, pid : u32, va : u64, out : &mut [u8], flags : u64) -> ResultEx<usize> {
+        let cb = u32::try_from(out.len())?;
+        let mut cb_read = 0;
+        let r = (self.native.VMMDLL_MemReadEx)(self.native.h, pid, va, out.as_mut_ptr(), cb, &mut cb_read, flags);
+        if !r {
+            return Err(anyhow!("VMMDLL_MemReadEx: fail."));
+        }
+        return Ok(cb_read as usize);
+    }
+
     fn impl_mem_scatter(&self, pid : u32, flags : u64) -> ResultEx<VmmScatterMemory> {
         let flags = u32::try_from(flags)?;
         let r = (self.native.VMMDLL_Scatter_Initialize)(self.native.h, pid, flags);
@@ -7903,6 +8041,16 @@ impl VmmScatterMemory<'_> {
             }
             return Ok(result);
         }
+    }
+
+    fn impl_read_into(&self, va : u64, out : &mut [u8]) -> ResultEx<usize> {
+        let cb = u32::try_from(out.len())?;
+        let mut cb_read = 0;
+        let r = (self.vmm.native.VMMDLL_Scatter_Read)(self.hs, va, cb, out.as_mut_ptr(), &mut cb_read);
+        if !r {
+            return Err(anyhow!("VMMDLL_Scatter_Read: fail."));
+        }
+        return Ok(cb_read as usize);
     }
 
     fn impl_clear(&self) -> ResultEx<()> {
